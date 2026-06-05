@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 import time
@@ -9,12 +10,51 @@ OUTPUT_DIR = Path("output")
 CAPTURED_IMAGE = OUTPUT_DIR / "captured_task.png"
 
 
+def setup_log(log_path: str | None) -> None:
+    if not log_path:
+        return
+
+    path = Path(log_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    log_file = path.open("w", encoding="utf-8")
+    sys.stdout = log_file
+    sys.stderr = log_file
+
+
 def fail(message: str) -> int:
     print(f"Ошибка: {message}", file=sys.stderr)
     return 1
 
 
+def open_camera(cv2):
+    backends = [
+        ("CAP_DSHOW", cv2.CAP_DSHOW),
+        ("default", cv2.CAP_ANY),
+    ]
+
+    for index in range(3):
+        for backend_name, backend in backends:
+            camera = cv2.VideoCapture(index, backend)
+            if not camera.isOpened():
+                camera.release()
+                continue
+
+            ok, frame = camera.read()
+            if ok and frame is not None:
+                print(f"Камера открыта: index={index}, backend={backend_name}")
+                return camera
+
+            camera.release()
+
+    return None
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description="Capture task text from the laptop camera.")
+    parser.add_argument("--log", default=None, help="Write all output to this log file.")
+    args = parser.parse_args()
+    setup_log(args.log)
+
     try:
         import cv2
         import pytesseract
@@ -28,9 +68,13 @@ def main() -> int:
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     INPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
 
-    camera = cv2.VideoCapture(0, cv2.CAP_DSHOW)
-    if not camera.isOpened():
-        return fail("Не удалось открыть камеру ноутбука.")
+    camera = open_camera(cv2)
+    if camera is None:
+        return fail(
+            "Не удалось открыть камеру ноутбука. "
+            "Проверь: доступ к камере в Windows для классических приложений, "
+            "что камера не занята другой программой, и что она не отключена."
+        )
 
     print("Считываю изображение с камеры 3 секунды...")
 

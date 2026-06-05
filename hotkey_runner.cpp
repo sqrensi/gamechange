@@ -43,7 +43,7 @@ void run_python_script(const std::wstring& app_dir, const std::wstring& script_n
     std::wstring script = app_dir + L"\\" + script_name;
     std::wstring script_log = app_dir + L"\\output\\" + log_name;
     std::wstring command =
-        L"cmd.exe /c \"\"python\" \"" + script + L"\" > \"" + script_log + L"\" 2>&1\"";
+        L"pythonw \"" + script + L"\" --log \"" + script_log + L"\"";
 
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);

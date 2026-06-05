@@ -63,6 +63,17 @@ def ask_ollama(prompt: str, model: str) -> str:
     return text
 
 
+def setup_log(log_path: str | None) -> None:
+    if not log_path:
+        return
+
+    path = Path(log_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    log_file = path.open("w", encoding="utf-8")
+    sys.stdout = log_file
+    sys.stderr = log_file
+
+
 def extract_cpp_code(text: str) -> str:
     match = re.search(r"```(?:cpp|c\+\+|cc)?\s*(.*?)```", text, re.IGNORECASE | re.DOTALL)
     if match:
@@ -76,7 +87,10 @@ def main() -> int:
     parser.add_argument("--input", default=str(DEFAULT_INPUT), help="Path to the task statement file.")
     parser.add_argument("--output", default=str(DEFAULT_OUTPUT), help="Path to the generated C++ file.")
     parser.add_argument("--model", default=os.getenv("OLLAMA_MODEL", DEFAULT_MODEL), help="Ollama model name.")
+    parser.add_argument("--log", default=None, help="Write all output to this log file.")
     args = parser.parse_args()
+
+    setup_log(args.log)
 
     input_path = Path(args.input)
     output_path = Path(args.output)
