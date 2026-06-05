@@ -90,7 +90,7 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         return 1;
     }
 
-    write_log(app_dir, "Hotkey runner started. Ctrl+Alt+C captures input/task.txt, Ctrl+Alt+S generates output/solution.cpp.");
+    write_log(app_dir, "Hotkey runner started. Ctrl+Alt+C captures input/task.txt, Ctrl+Alt+S generates exam/1.txt.");
 
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {

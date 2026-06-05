@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 DEFAULT_INPUT = Path("input") / "task.txt"
-DEFAULT_OUTPUT = Path("output") / "solution.cpp"
+DEFAULT_OUTPUT = Path("exam") / "1.txt"
 DEFAULT_MODEL = "qwen2.5-coder:7b"
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 

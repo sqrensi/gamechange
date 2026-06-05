@@ -51,10 +51,10 @@ input/task.txt
 python solve_task.py
 ```
 
-3. Готовое решение появится тут:
+3. Готовый код появится тут:
 
 ```text
-output/solution.cpp
+exam/1.txt
 ```
 
 ## Фоновый запуск по горячей клавише
@@ -62,7 +62,7 @@ output/solution.cpp
 Можно собрать маленький exe без окна. Он постоянно работает в фоне и слушает две горячие клавиши:
 
 - `Ctrl + Alt + C` — 3 секунды считывает условие через камеру и записывает текст в `input/task.txt`.
-- `Ctrl + Alt + S` — запускает генерацию решения из `input/task.txt` в `output/solution.cpp`.
+- `Ctrl + Alt + S` — запускает генерацию решения из `input/task.txt` в `exam/1.txt`.
 
 Сборка через MinGW g++ (статическая линковка, чтобы exe работал на других ноутбуках без `libstdc++-6.dll` и `libgcc_s_seh-1.dll`):
 
@@ -76,10 +76,10 @@ g++ hotkey_runner.cpp -std=c++17 -mwindows -static -static-libgcc -static-libstd
 .\hotkey_runner.exe
 ```
 
-После запуска можно сначала нажать `Ctrl + Alt + C`, а потом `Ctrl + Alt + S`. Решение появится в:
+После запуска можно сначала нажать `Ctrl + Alt + C`, а потом `Ctrl + Alt + S`. Готовый код появится в:
 
 ```text
-output/solution.cpp
+exam/1.txt
 ```
 
 Логи сохраняются тут:
