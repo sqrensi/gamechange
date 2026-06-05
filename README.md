@@ -21,11 +21,13 @@ ollama pull qwen2.5-coder:3b
 
 Для считывания условия через камеру нужен **Python 3.12** (PaddlePaddle не работает на Python 3.14).
 
-```powershell
-.\install_camera.ps1
+Все команды установки без скрипта лежат в файле:
+
+```text
+install_camera.txt
 ```
 
-Если `install_camera.ps1` не запускается, установи вручную:
+Кратко:
 
 ```powershell
 py -3.12 -m pip install -r requirements.txt

@@ -1,0 +1,64 @@
+Установка OCR для камеры (без PowerShell-скрипта)
+=================================================
+
+Важно:
+- Для PaddleOCR нужен Python 3.12
+- Python 3.14 не подходит
+- Скачать Python 3.12: https://www.python.org/downloads/release/python-3120/
+- При установке поставь галочку "Add python.exe to PATH"
+
+
+1. Проверить, что Python 3.12 установлен
+----------------------------------------
+
+py -3.12 --version
+
+
+2. Установить базовые зависимости
+---------------------------------
+
+py -3.12 -m pip install -r requirements.txt
+
+
+3. Установить PaddlePaddle (CPU)
+--------------------------------
+
+py -3.12 -m pip install paddlepaddle==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+
+
+4. Установить PaddleOCR
+-----------------------
+
+py -3.12 -m pip install paddleocr
+
+
+5. Перезапустить hotkey_runner.exe
+----------------------------------
+
+Закрой старый hotkey_runner.exe в диспетчере задач.
+Запусти hotkey_runner.exe заново.
+
+
+6. Проверка
+-----------
+
+Нажми Ctrl+Alt+C
+
+Смотри логи:
+output/capture_task.log
+output/captured_task.png
+input/task.txt
+
+
+Запасной вариант: Tesseract
+---------------------------
+
+Если PaddleOCR не установился, можно поставить Tesseract:
+
+winget install UB-Mannheim.TesseractOCR
+
+Потом проверь:
+
+"C:\Program Files\Tesseract-OCR\tesseract.exe" --list-langs
+
+В списке должен быть rus
