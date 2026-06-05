@@ -8,8 +8,9 @@ import urllib.request
 from pathlib import Path
 
 
-DEFAULT_INPUT = Path("input") / "task.txt"
-DEFAULT_OUTPUT = Path("exam") / "1.txt"
+BASE_DIR = Path(__file__).resolve().parent
+DEFAULT_INPUT = BASE_DIR / "input" / "task.txt"
+DEFAULT_OUTPUT = BASE_DIR / "exam" / "1.txt"
 DEFAULT_MODEL = "qwen2.5-coder:7b"
 OLLAMA_URL = "http://127.0.0.1:11434/api/generate"
 
@@ -91,6 +92,8 @@ def main() -> int:
     args = parser.parse_args()
 
     setup_log(args.log)
+
+    print(f"Рабочая папка: {BASE_DIR}")
 
     input_path = Path(args.input)
     output_path = Path(args.output)

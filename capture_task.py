@@ -5,9 +5,16 @@ import time
 from pathlib import Path
 
 
-INPUT_PATH = Path("input") / "task.txt"
-OUTPUT_DIR = Path("output")
+BASE_DIR = Path(__file__).resolve().parent
+INPUT_PATH = BASE_DIR / "input" / "task.txt"
+OUTPUT_DIR = BASE_DIR / "output"
 CAPTURED_IMAGE = OUTPUT_DIR / "captured_task.png"
+OCR_DEBUG_IMAGE = OUTPUT_DIR / "ocr_debug.png"
+
+DEFAULT_TESSERACT_PATHS = [
+    Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe"),
+    Path(r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"),
+]
 
 
 def setup_log(log_path: str | None) -> None:
@@ -26,27 +33,61 @@ def fail(message: str) -> int:
     return 1
 
 
+def configure_tesseract(pytesseract) -> None:
+    tesseract_cmd = os.getenv("TESSERACT_CMD")
+    if tesseract_cmd:
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+        return
+
+    for candidate in DEFAULT_TESSERACT_PATHS:
+        if candidate.exists():
+            pytesseract.pytesseract.tesseract_cmd = str(candidate)
+            print(f"Tesseract: {candidate}")
+            return
+
+
 def open_camera(cv2):
-    backends = [
+    backends = []
+    if hasattr(cv2, "CAP_MSMF"):
+        backends.append(("CAP_MSMF", cv2.CAP_MSMF))
+    backends.extend([
         ("CAP_DSHOW", cv2.CAP_DSHOW),
         ("default", cv2.CAP_ANY),
-    ]
+    ])
 
     for index in range(3):
         for backend_name, backend in backends:
+            print(f"Пробую камеру index={index}, backend={backend_name}")
             camera = cv2.VideoCapture(index, backend)
             if not camera.isOpened():
                 camera.release()
                 continue
 
-            ok, frame = camera.read()
-            if ok and frame is not None:
-                print(f"Камера открыта: index={index}, backend={backend_name}")
-                return camera
+            camera.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+            camera.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+
+            for _ in range(5):
+                ok, frame = camera.read()
+                if ok and frame is not None:
+                    print(f"Камера открыта: index={index}, backend={backend_name}")
+                    return camera
 
             camera.release()
 
     return None
+
+
+def run_ocr(pytesseract, prepared) -> str:
+    for lang in ("rus+eng", "eng", "rus"):
+        try:
+            text = pytesseract.image_to_string(prepared, lang=lang)
+            if text.strip():
+                print(f"OCR язык: {lang}")
+                return text.strip()
+        except pytesseract.TesseractError as exc:
+            print(f"OCR ошибка для {lang}: {exc}")
+
+    return ""
 
 
 def main() -> int:
@@ -55,15 +96,15 @@ def main() -> int:
     args = parser.parse_args()
     setup_log(args.log)
 
+    print(f"Рабочая папка: {BASE_DIR}")
+
     try:
         import cv2
         import pytesseract
     except ImportError:
         return fail("Установи зависимости: python -m pip install opencv-python pytesseract")
 
-    tesseract_cmd = os.getenv("TESSERACT_CMD")
-    if tesseract_cmd:
-        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+    configure_tesseract(pytesseract)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     INPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -72,8 +113,8 @@ def main() -> int:
     if camera is None:
         return fail(
             "Не удалось открыть камеру ноутбука. "
-            "Проверь: доступ к камере в Windows для классических приложений, "
-            "что камера не занята другой программой, и что она не отключена."
+            "Проверь доступ к камере для классических приложений в Windows, "
+            "что камера не занята другой программой и что она не отключена."
         )
 
     print("Считываю изображение с камеры 3 секунды...")
@@ -106,18 +147,17 @@ def main() -> int:
     gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
     gray = cv2.GaussianBlur(gray, (3, 3), 0)
     _, prepared = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    cv2.imwrite(str(OCR_DEBUG_IMAGE), prepared)
 
     try:
-        text = pytesseract.image_to_string(prepared, lang="rus+eng")
+        text = run_ocr(pytesseract, prepared)
     except pytesseract.TesseractNotFoundError:
         return fail(
-            "Tesseract OCR не найден. Установи Tesseract и при необходимости укажи путь "
-            "через переменную TESSERACT_CMD."
+            "Tesseract OCR не найден. Установи Tesseract или укажи путь через TESSERACT_CMD."
         )
 
-    text = text.strip()
     if not text:
-        return fail("OCR не распознал текст. Попробуй лучшее освещение и крупнее показать условие.")
+        return fail("OCR не распознал текст. Смотри output/captured_task.png и output/ocr_debug.png.")
 
     INPUT_PATH.write_text(text + "\n", encoding="utf-8")
     print(f"Готово: условие записано в {INPUT_PATH}")

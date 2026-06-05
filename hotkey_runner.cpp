@@ -2,6 +2,7 @@
 
 #include <fstream>
 #include <string>
+#include <vector>
 
 const int SOLVE_HOTKEY_ID = 1;
 const int CAPTURE_HOTKEY_ID = 2;
@@ -37,13 +38,62 @@ void write_log(const std::wstring& app_dir, const std::string& message) {
     }
 }
 
-void run_python_script(const std::wstring& app_dir, const std::wstring& script_name, const std::wstring& log_name) {
+bool file_exists(const std::wstring& path) {
+    DWORD attrs = GetFileAttributesW(path.c_str());
+    return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+std::wstring find_python_launcher() {
+    wchar_t buffer[MAX_PATH];
+
+    if (SearchPathW(nullptr, L"pythonw.exe", nullptr, MAX_PATH, buffer, nullptr)) {
+        return buffer;
+    }
+
+    wchar_t local_app_data[MAX_PATH];
+    DWORD local_len = GetEnvironmentVariableW(L"LOCALAPPDATA", local_app_data, MAX_PATH);
+    if (local_len > 0 && local_len < MAX_PATH) {
+        std::wstring base = std::wstring(local_app_data) + L"\\Programs\\Python\\";
+        std::wstring pattern = base + L"Python*";
+        WIN32_FIND_DATAW data{};
+        HANDLE handle = FindFirstFileW(pattern.c_str(), &data);
+        if (handle != INVALID_HANDLE_VALUE) {
+            do {
+                if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                    std::wstring candidate = base + data.cFileName + L"\\pythonw.exe";
+                    if (file_exists(candidate)) {
+                        FindClose(handle);
+                        return candidate;
+                    }
+                }
+            } while (FindNextFileW(handle, &data));
+            FindClose(handle);
+        }
+    }
+
+    if (SearchPathW(nullptr, L"pyw.exe", nullptr, MAX_PATH, buffer, nullptr)) {
+        return buffer;
+    }
+
+    return L"";
+}
+
+DWORD run_python_script(
+    const std::wstring& app_dir,
+    const std::wstring& python_launcher,
+    const std::wstring& script_name,
+    const std::wstring& log_name,
+    bool wait_for_exit
+) {
     CreateDirectoryW((app_dir + L"\\output").c_str(), nullptr);
 
     std::wstring script = app_dir + L"\\" + script_name;
     std::wstring script_log = app_dir + L"\\output\\" + log_name;
     std::wstring command =
-        L"pythonw \"" + script + L"\" --log \"" + script_log + L"\"";
+        L"\"" + python_launcher + L"\" \"" + script + L"\" --log \"" + script_log + L"\"";
+
+    std::vector<wchar_t> command_buffer(command.begin(), command.end());
+    command_buffer.push_back(L'\0');
 
     STARTUPINFOW startup{};
     startup.cb = sizeof(startup);
@@ -52,12 +102,12 @@ void run_python_script(const std::wstring& app_dir, const std::wstring& script_n
 
     PROCESS_INFORMATION process{};
     BOOL ok = CreateProcessW(
-        nullptr,
-        command.data(),
+        python_launcher.c_str(),
+        command_buffer.data(),
         nullptr,
         nullptr,
         FALSE,
-        CREATE_NO_WINDOW,
+        CREATE_NO_WINDOW | DETACHED_PROCESS,
         nullptr,
         app_dir.c_str(),
         &startup,
@@ -66,16 +116,40 @@ void run_python_script(const std::wstring& app_dir, const std::wstring& script_n
 
     if (!ok) {
         write_log(app_dir, "Failed to start " + narrow(script_name) + ". Error: " + std::to_string(GetLastError()));
-        return;
+        return 1;
     }
 
     write_log(app_dir, "Started " + narrow(script_name) + ".");
+
+    if (!wait_for_exit) {
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+        return 0;
+    }
+
+    WaitForSingleObject(process.hProcess, INFINITE);
+
+    DWORD exit_code = 1;
+    GetExitCodeProcess(process.hProcess, &exit_code);
+
     CloseHandle(process.hThread);
     CloseHandle(process.hProcess);
+
+    write_log(app_dir, "Finished " + narrow(script_name) + " with code " + std::to_string(exit_code) + ".");
+    return exit_code;
 }
 
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
     std::wstring app_dir = app_directory();
+    std::wstring python_launcher = find_python_launcher();
+
+    if (python_launcher.empty()) {
+        write_log(app_dir, "Python launcher not found. Install Python and ensure pythonw.exe is available.");
+        MessageBoxW(nullptr, L"pythonw.exe not found.", L"Hotkey runner", MB_ICONERROR);
+        return 1;
+    }
+
+    write_log(app_dir, "Using Python launcher: " + narrow(python_launcher));
 
     if (!RegisterHotKey(nullptr, SOLVE_HOTKEY_ID, MOD_CONTROL | MOD_ALT | MOD_NOREPEAT, 'S')) {
         write_log(app_dir, "Failed to register Ctrl+Alt+S. Error: " + std::to_string(GetLastError()));
@@ -90,16 +164,26 @@ int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {
         return 1;
     }
 
-    write_log(app_dir, "Hotkey runner started. Ctrl+Alt+C captures input/task.txt, Ctrl+Alt+S generates exam/1.txt.");
+    write_log(app_dir, "Hotkey runner started. Ctrl+Alt+C captures and solves, Ctrl+Alt+S solves exam/1.txt.");
 
     MSG message{};
     while (GetMessageW(&message, nullptr, 0, 0) > 0) {
         if (message.message == WM_HOTKEY && message.wParam == SOLVE_HOTKEY_ID) {
-            run_python_script(app_dir, L"solve_task.py", L"solve_task.log");
+            run_python_script(app_dir, python_launcher, L"solve_task.py", L"solve_task.log", false);
         }
 
         if (message.message == WM_HOTKEY && message.wParam == CAPTURE_HOTKEY_ID) {
-            run_python_script(app_dir, L"capture_task.py", L"capture_task.log");
+            DWORD capture_code = run_python_script(
+                app_dir,
+                python_launcher,
+                L"capture_task.py",
+                L"capture_task.log",
+                true
+            );
+
+            if (capture_code == 0) {
+                run_python_script(app_dir, python_launcher, L"solve_task.py", L"solve_task.log", false);
+            }
         }
     }
 
