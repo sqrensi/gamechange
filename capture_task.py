@@ -1,5 +1,4 @@
 import argparse
-import os
 import sys
 import time
 from pathlib import Path
@@ -10,11 +9,7 @@ INPUT_PATH = BASE_DIR / "input" / "task.txt"
 OUTPUT_DIR = BASE_DIR / "output"
 CAPTURED_IMAGE = OUTPUT_DIR / "captured_task.png"
 OCR_DEBUG_IMAGE = OUTPUT_DIR / "ocr_debug.png"
-
-DEFAULT_TESSERACT_PATHS = [
-    Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe"),
-    Path(r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"),
-]
+CAPTURE_SECONDS = 3
 
 
 def setup_log(log_path: str | None) -> None:
@@ -31,19 +26,6 @@ def setup_log(log_path: str | None) -> None:
 def fail(message: str) -> int:
     print(f"Ошибка: {message}", file=sys.stderr)
     return 1
-
-
-def configure_tesseract(pytesseract) -> None:
-    tesseract_cmd = os.getenv("TESSERACT_CMD")
-    if tesseract_cmd:
-        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
-        return
-
-    for candidate in DEFAULT_TESSERACT_PATHS:
-        if candidate.exists():
-            pytesseract.pytesseract.tesseract_cmd = str(candidate)
-            print(f"Tesseract: {candidate}")
-            return
 
 
 def open_camera(cv2):
@@ -77,15 +59,105 @@ def open_camera(cv2):
     return None
 
 
-def run_ocr(pytesseract, prepared) -> str:
-    for lang in ("rus+eng", "eng", "rus"):
-        try:
-            text = pytesseract.image_to_string(prepared, lang=lang)
-            if text.strip():
-                print(f"OCR язык: {lang}")
-                return text.strip()
-        except pytesseract.TesseractError as exc:
-            print(f"OCR ошибка для {lang}: {exc}")
+def frame_sharpness(cv2, frame) -> float:
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    return cv2.Laplacian(gray, cv2.CV_64F).var()
+
+
+def capture_best_frame(cv2, camera):
+    print(f"Снимаю видео {CAPTURE_SECONDS} секунды и выбираю лучший кадр...")
+
+    best_frame = None
+    best_score = -1.0
+    end_time = time.time() + CAPTURE_SECONDS
+
+    while time.time() < end_time:
+        ok, frame = camera.read()
+        if not ok or frame is None:
+            continue
+
+        score = frame_sharpness(cv2, frame)
+        if score > best_score:
+            best_score = score
+            best_frame = frame.copy()
+
+        time.sleep(0.05)
+
+    if best_frame is not None:
+        print(f"Лучший кадр выбран, резкость: {best_score:.1f}")
+
+    return best_frame
+
+
+def prepare_for_ocr(cv2, frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
+    gray = cv2.GaussianBlur(gray, (3, 3), 0)
+    _, binary = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    enhanced = cv2.cvtColor(binary, cv2.COLOR_GRAY2BGR)
+    return enhanced
+
+
+def create_paddle_ocr(lang: str):
+    from paddleocr import PaddleOCR
+
+    try:
+        return PaddleOCR(use_angle_cls=True, lang=lang, use_gpu=False, show_log=False)
+    except TypeError:
+        return PaddleOCR(lang=lang)
+
+
+def extract_text_from_result(result) -> str:
+    if not result:
+        return ""
+
+    lines = result[0] if isinstance(result[0], list) else result
+    if not lines:
+        return ""
+
+    ordered = []
+    for item in lines:
+        if not item or len(item) < 2:
+            continue
+
+        box, text_info = item[0], item[1]
+        if isinstance(text_info, (list, tuple)):
+            text = str(text_info[0]).strip()
+            confidence = float(text_info[1]) if len(text_info) > 1 else 0.0
+        else:
+            text = str(text_info).strip()
+            confidence = 0.0
+
+        if not text:
+            continue
+
+        top = min(point[1] for point in box)
+        left = min(point[0] for point in box)
+        ordered.append((top, left, confidence, text))
+
+    ordered.sort(key=lambda item: (item[0], item[1]))
+    return "\n".join(item[3] for item in ordered).strip()
+
+
+def run_paddle_ocr(cv2, frame) -> str:
+    prepared = prepare_for_ocr(cv2, frame)
+    cv2.imwrite(str(OCR_DEBUG_IMAGE), prepared)
+
+    images = [
+        ("original", frame),
+        ("prepared", prepared),
+    ]
+
+    for lang in ("ru", "en"):
+        print(f"Запускаю PaddleOCR, язык: {lang}")
+        ocr = create_paddle_ocr(lang)
+
+        for image_name, image in images:
+            result = ocr.ocr(image, cls=True)
+            text = extract_text_from_result(result)
+            if text:
+                print(f"OCR успешен: lang={lang}, image={image_name}, длина={len(text)}")
+                return text
 
     return ""
 
@@ -100,11 +172,13 @@ def main() -> int:
 
     try:
         import cv2
-        import pytesseract
     except ImportError:
-        return fail("Установи зависимости: python -m pip install opencv-python pytesseract")
+        return fail("Установи зависимости: python -m pip install -r requirements.txt")
 
-    configure_tesseract(pytesseract)
+    try:
+        import paddleocr  # noqa: F401
+    except ImportError:
+        return fail("PaddleOCR не установлен: python -m pip install -r requirements.txt")
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     INPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -117,25 +191,7 @@ def main() -> int:
             "что камера не занята другой программой и что она не отключена."
         )
 
-    print("Считываю изображение с камеры 3 секунды...")
-
-    best_frame = None
-    best_score = -1.0
-    end_time = time.time() + 3
-
-    while time.time() < end_time:
-        ok, frame = camera.read()
-        if not ok:
-            continue
-
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        score = cv2.Laplacian(gray, cv2.CV_64F).var()
-        if score > best_score:
-            best_score = score
-            best_frame = frame
-
-        time.sleep(0.05)
-
+    best_frame = capture_best_frame(cv2, camera)
     camera.release()
 
     if best_frame is None:
@@ -143,18 +199,10 @@ def main() -> int:
 
     cv2.imwrite(str(CAPTURED_IMAGE), best_frame)
 
-    gray = cv2.cvtColor(best_frame, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=1.5, fy=1.5, interpolation=cv2.INTER_CUBIC)
-    gray = cv2.GaussianBlur(gray, (3, 3), 0)
-    _, prepared = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    cv2.imwrite(str(OCR_DEBUG_IMAGE), prepared)
-
     try:
-        text = run_ocr(pytesseract, prepared)
-    except pytesseract.TesseractNotFoundError:
-        return fail(
-            "Tesseract OCR не найден. Установи Tesseract или укажи путь через TESSERACT_CMD."
-        )
+        text = run_paddle_ocr(cv2, best_frame)
+    except Exception as exc:
+        return fail(f"PaddleOCR ошибка: {exc}")
 
     if not text:
         return fail("OCR не распознал текст. Смотри output/captured_task.png и output/ocr_debug.png.")

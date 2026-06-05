@@ -19,23 +19,14 @@ ollama pull qwen2.5-coder:7b
 ollama pull qwen2.5-coder:3b
 ```
 
-Для считывания условия через камеру также нужны Python-зависимости и локальный Tesseract OCR:
+Для считывания условия через камеру также нужны Python-зависимости и локальный PaddleOCR:
 
 ```powershell
 python -m pip install -r requirements.txt
 ```
 
-Tesseract можно установить через winget:
-
-```powershell
-winget install UB-Mannheim.TesseractOCR
-```
-
-Если Python не найдет Tesseract автоматически, укажи путь:
-
-```powershell
-$env:TESSERACT_CMD="C:\Program Files\Tesseract-OCR\tesseract.exe"
-```
+При первом запуске PaddleOCR сам скачает модели для распознавания текста.  
+Схема работы: 3 секунды видео с камеры -> выбор самого резкого кадра -> OCR в `input/task.txt`.
 
 ## Как пользоваться
 
@@ -89,6 +80,7 @@ output/hotkey_runner.log
 output/capture_task.log
 output/solve_task.log
 output/captured_task.png
+output/ocr_debug.png
 ```
 
 ## Другая модель
