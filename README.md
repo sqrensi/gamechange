@@ -64,10 +64,10 @@ output/solution.cpp
 - `Ctrl + Alt + C` — 3 секунды считывает условие через камеру и записывает текст в `input/task.txt`.
 - `Ctrl + Alt + S` — запускает генерацию решения из `input/task.txt` в `output/solution.cpp`.
 
-Сборка через MinGW g++:
+Сборка через MinGW g++ (статическая линковка, чтобы exe работал на других ноутбуках без `libstdc++-6.dll` и `libgcc_s_seh-1.dll`):
 
 ```powershell
-g++ hotkey_runner.cpp -std=c++17 -mwindows -o hotkey_runner.exe
+g++ hotkey_runner.cpp -std=c++17 -mwindows -static -static-libgcc -static-libstdc++ -o hotkey_runner.exe
 ```
 
 Запуск:
