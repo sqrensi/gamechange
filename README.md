@@ -19,13 +19,22 @@ ollama pull qwen2.5-coder:7b
 ollama pull qwen2.5-coder:3b
 ```
 
-Для считывания условия через камеру также нужны Python-зависимости и локальный PaddleOCR:
+Для считывания условия через камеру нужен **Python 3.12** (PaddlePaddle не работает на Python 3.14).
 
 ```powershell
-python -m pip install -r requirements.txt
+.\install_camera.ps1
 ```
 
-При первом запуске PaddleOCR сам скачает модели для распознавания текста.  
+Если `install_camera.ps1` не запускается, установи вручную:
+
+```powershell
+py -3.12 -m pip install -r requirements.txt
+py -3.12 -m pip install paddlepaddle==3.3.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
+py -3.12 -m pip install paddleocr
+```
+
+Если PaddleOCR не установлен, программа попробует Tesseract как запасной вариант.
+
 Схема работы: 3 секунды видео с камеры -> выбор самого резкого кадра -> OCR в `input/task.txt`.
 
 ## Как пользоваться

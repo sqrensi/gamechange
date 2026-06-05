@@ -1,4 +1,5 @@
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -10,6 +11,10 @@ OUTPUT_DIR = BASE_DIR / "output"
 CAPTURED_IMAGE = OUTPUT_DIR / "captured_task.png"
 OCR_DEBUG_IMAGE = OUTPUT_DIR / "ocr_debug.png"
 CAPTURE_SECONDS = 3
+DEFAULT_TESSERACT_PATHS = [
+    Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe"),
+    Path(r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe"),
+]
 
 
 def setup_log(log_path: str | None) -> None:
@@ -139,10 +144,41 @@ def extract_text_from_result(result) -> str:
     return "\n".join(item[3] for item in ordered).strip()
 
 
-def run_paddle_ocr(cv2, frame) -> str:
-    prepared = prepare_for_ocr(cv2, frame)
-    cv2.imwrite(str(OCR_DEBUG_IMAGE), prepared)
+def configure_tesseract(pytesseract) -> None:
+    tesseract_cmd = os.getenv("TESSERACT_CMD")
+    if tesseract_cmd:
+        pytesseract.pytesseract.tesseract_cmd = tesseract_cmd
+        return
 
+    for candidate in DEFAULT_TESSERACT_PATHS:
+        if candidate.exists():
+            pytesseract.pytesseract.tesseract_cmd = str(candidate)
+            print(f"Tesseract: {candidate}")
+            return
+
+
+def run_tesseract_ocr(pytesseract, prepared) -> str:
+    for lang in ("rus+eng", "eng", "rus"):
+        try:
+            text = pytesseract.image_to_string(prepared, lang=lang)
+            if text.strip():
+                print(f"Tesseract OCR язык: {lang}")
+                return text.strip()
+        except Exception as exc:
+            print(f"Tesseract OCR ошибка для {lang}: {exc}")
+
+    return ""
+
+
+def paddle_available() -> bool:
+    try:
+        import paddleocr  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def run_paddle_ocr(frame, prepared) -> str:
     images = [
         ("original", frame),
         ("prepared", prepared),
@@ -162,6 +198,28 @@ def run_paddle_ocr(cv2, frame) -> str:
     return ""
 
 
+def run_ocr(cv2, frame) -> str:
+    prepared = prepare_for_ocr(cv2, frame)
+    cv2.imwrite(str(OCR_DEBUG_IMAGE), prepared)
+
+    if paddle_available():
+        try:
+            text = run_paddle_ocr(frame, prepared)
+            if text:
+                return text
+            print("PaddleOCR не распознал текст, пробую Tesseract...")
+        except Exception as exc:
+            print(f"PaddleOCR ошибка: {exc}, пробую Tesseract...")
+
+    try:
+        import pytesseract
+    except ImportError:
+        return ""
+
+    configure_tesseract(pytesseract)
+    return run_tesseract_ocr(pytesseract, prepared)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Capture task text from the laptop camera.")
     parser.add_argument("--log", default=None, help="Write all output to this log file.")
@@ -175,10 +233,12 @@ def main() -> int:
     except ImportError:
         return fail("Установи зависимости: python -m pip install -r requirements.txt")
 
-    try:
-        import paddleocr  # noqa: F401
-    except ImportError:
-        return fail("PaddleOCR не установлен: python -m pip install -r requirements.txt")
+    print(f"Python: {sys.version.split()[0]}")
+    if not paddle_available():
+        print(
+            "PaddleOCR не найден. Для лучшего OCR установи Python 3.12 и запусти install_camera.ps1. "
+            "Пока будет использован Tesseract, если он установлен."
+        )
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     INPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -199,13 +259,14 @@ def main() -> int:
 
     cv2.imwrite(str(CAPTURED_IMAGE), best_frame)
 
-    try:
-        text = run_paddle_ocr(cv2, best_frame)
-    except Exception as exc:
-        return fail(f"PaddleOCR ошибка: {exc}")
+    text = run_ocr(cv2, best_frame)
 
     if not text:
-        return fail("OCR не распознал текст. Смотри output/captured_task.png и output/ocr_debug.png.")
+        return fail(
+            "OCR не распознал текст. "
+            "Для PaddleOCR нужен Python 3.12: запусти install_camera.ps1. "
+            "Или установи Tesseract и смотри output/captured_task.png."
+        )
 
     INPUT_PATH.write_text(text + "\n", encoding="utf-8")
     print(f"Готово: условие записано в {INPUT_PATH}")
