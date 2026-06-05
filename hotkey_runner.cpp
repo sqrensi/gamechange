@@ -43,31 +43,60 @@ bool file_exists(const std::wstring& path) {
     return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
 }
 
+std::wstring pythonw_in_folder(const std::wstring& base, const std::wstring& folder) {
+    std::wstring candidate = base + folder + L"\\pythonw.exe";
+    return file_exists(candidate) ? candidate : L"";
+}
+
 std::wstring find_python_launcher() {
     wchar_t buffer[MAX_PATH];
-
-    if (SearchPathW(nullptr, L"pythonw.exe", nullptr, MAX_PATH, buffer, nullptr)) {
-        return buffer;
-    }
-
     wchar_t local_app_data[MAX_PATH];
     DWORD local_len = GetEnvironmentVariableW(L"LOCALAPPDATA", local_app_data, MAX_PATH);
+
     if (local_len > 0 && local_len < MAX_PATH) {
         std::wstring base = std::wstring(local_app_data) + L"\\Programs\\Python\\";
+
+        const wchar_t* preferred_versions[] = {
+            L"Python312",
+            L"Python313",
+            L"Python311",
+            L"Python310",
+            L"Python39",
+        };
+
+        for (const wchar_t* version : preferred_versions) {
+            std::wstring candidate = pythonw_in_folder(base, version);
+            if (!candidate.empty()) {
+                return candidate;
+            }
+        }
+
         std::wstring pattern = base + L"Python*";
         WIN32_FIND_DATAW data{};
         HANDLE handle = FindFirstFileW(pattern.c_str(), &data);
         if (handle != INVALID_HANDLE_VALUE) {
             do {
                 if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
-                    std::wstring candidate = base + data.cFileName + L"\\pythonw.exe";
-                    if (file_exists(candidate)) {
+                    std::wstring folder = data.cFileName;
+                    if (folder == L"Python314") {
+                        continue;
+                    }
+
+                    std::wstring candidate = pythonw_in_folder(base, folder);
+                    if (!candidate.empty()) {
                         FindClose(handle);
                         return candidate;
                     }
                 }
             } while (FindNextFileW(handle, &data));
             FindClose(handle);
+        }
+    }
+
+    if (SearchPathW(nullptr, L"pythonw.exe", nullptr, MAX_PATH, buffer, nullptr)) {
+        std::wstring candidate(buffer);
+        if (candidate.find(L"Python314") == std::wstring::npos) {
+            return candidate;
         }
     }
 

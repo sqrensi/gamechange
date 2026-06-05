@@ -38,6 +38,11 @@ py -3.12 -m pip install paddleocr
 Закрой старый hotkey_runner.exe в диспетчере задач.
 Запусти hotkey_runner.exe заново.
 
+В output/hotkey_runner.log должно быть:
+Using Python launcher: ...Python312\pythonw.exe
+
+Если там Python314, скачай свежий hotkey_runner.exe с GitHub.
+
 
 6. Проверка
 -----------
